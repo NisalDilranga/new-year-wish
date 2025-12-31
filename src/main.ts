@@ -416,8 +416,10 @@ function createFirework(
 
 function explodeFirework(fw: LoaderFirework) {
   const scale = getMobileScale();
+  // Much more aggressive particle reduction for mobile
+  const baseCount = fw.isGrand ? 80 : 50;
   const particleCount = Math.floor(
-    (fw.isGrand ? 150 : 100) * qualitySettings.particleMultiplier
+    baseCount * qualitySettings.particleMultiplier
   );
   const colorSet =
     fireworkColors[Math.floor(Math.random() * fireworkColors.length)];
@@ -428,7 +430,7 @@ function explodeFirework(fw: LoaderFirework) {
   // Main burst - circular pattern
   for (let i = 0; i < particleCount; i++) {
     const angle = (Math.PI * 2 * i) / particleCount;
-    const speed = (Math.random() * 6 + 4) * (fw.isGrand ? 1.5 : 1) * scale;
+    const speed = (Math.random() * 5 + 3) * (fw.isGrand ? 1.3 : 1) * scale;
     const colorIndex = Math.floor(Math.random() * colorSet.length);
 
     fw.particles.push({
@@ -438,32 +440,34 @@ function explodeFirework(fw: LoaderFirework) {
       vy: Math.sin(angle) * speed * (0.8 + Math.random() * 0.4),
       life: 1,
       color: colorSet[colorIndex],
-      size: (Math.random() * 3 + 2) * scale,
+      size: (Math.random() * 2.5 + 1.5) * scale,
       trail: [],
     });
   }
 
-  // Inner sparkle burst - reduced for performance
-  const sparkleCount = Math.floor(40 * qualitySettings.particleMultiplier);
-  for (let i = 0; i < sparkleCount; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const speed = (Math.random() * 10 + 8) * scale;
+  // Inner sparkle burst - only on medium/high quality
+  if (qualitySettings.particleMultiplier >= 0.5) {
+    const sparkleCount = Math.floor(20 * qualitySettings.particleMultiplier);
+    for (let i = 0; i < sparkleCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = (Math.random() * 8 + 6) * scale;
 
-    fw.particles.push({
-      x: fw.x,
-      y: fw.y,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      life: 1,
-      color: "#ffffff",
-      size: (Math.random() * 2 + 1) * scale,
-      trail: [],
-    });
+      fw.particles.push({
+        x: fw.x,
+        y: fw.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        color: "#ffffff",
+        size: (Math.random() * 2 + 1) * scale,
+        trail: [],
+      });
+    }
   }
 
   // Crackle effect - only on high quality and grand fireworks
   if (fw.isGrand && qualitySettings.enableGlow) {
-    const crackleCount = Math.floor(30 * qualitySettings.particleMultiplier);
+    const crackleCount = Math.floor(15 * qualitySettings.particleMultiplier);
     for (let i = 0; i < crackleCount; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = (Math.random() * 3 + 1) * scale;
@@ -484,15 +488,32 @@ function explodeFirework(fw: LoaderFirework) {
   fw.exploded = true;
 }
 
-function animateLoader() {
+// Frame timing for loader animation
+let lastLoaderFrameTime = 0;
+const targetFrameTime = 1000 / 30; // Target 30fps for loader to save CPU
+
+function animateLoader(currentTime: number = 0) {
   if (!loaderCtx || !loaderCanvas) return;
 
+  // Throttle to ~30fps on low-end devices
+  const elapsed = currentTime - lastLoaderFrameTime;
+  if (qualitySettings === QUALITY_PRESETS.low && elapsed < targetFrameTime) {
+    loaderAnimationId = requestAnimationFrame(animateLoader);
+    return;
+  }
+  lastLoaderFrameTime = currentTime;
+
   // Clear with trail effect
-  loaderCtx.fillStyle = "rgba(10, 10, 32, 0.25)";
+  loaderCtx.fillStyle = "rgba(10, 10, 32, 0.3)";
   loaderCtx.fillRect(0, 0, loaderCanvas.width, loaderCanvas.height);
 
-  // Draw twinkling stars - simplified
-  for (const star of starParticles) {
+  // Draw twinkling stars - only update some stars each frame for performance
+  const starsToUpdate =
+    qualitySettings === QUALITY_PRESETS.low
+      ? Math.ceil(starParticles.length / 3)
+      : starParticles.length;
+  for (let i = 0; i < starsToUpdate; i++) {
+    const star = starParticles[i];
     star.life += (Math.random() - 0.5) * 0.1;
     star.life = Math.max(0.2, Math.min(1, star.life));
 
@@ -557,50 +578,69 @@ function animateLoader() {
         explodeFirework(fw);
       }
     } else {
-      // Explosion particles
+      // Explosion particles - optimized loop
       let allDead = true;
+      let particleIndex = 0;
 
       for (const p of fw.particles) {
-        if (p.life > 0) {
+        particleIndex++;
+
+        if (p.life > 0.05) {
+          // Skip nearly-dead particles
           allDead = false;
 
-          // Trail - only if enabled and limited length
-          if (qualitySettings.enableTrails) {
-            p.trail.push({ x: p.x, y: p.y });
-            if (p.trail.length > qualitySettings.trailLength) p.trail.shift();
-          }
-
-          // Physics
+          // Physics update
           p.x += p.vx;
           p.y += p.vy;
           p.vy += 0.12;
-          p.vx *= 0.98;
-          p.vy *= 0.98;
-          p.life -= 0.018; // Slightly faster decay
+          p.vx *= 0.97;
+          p.vy *= 0.97;
+          p.life -= 0.022; // Faster decay for quicker cleanup
 
-          // Draw trail - only if enabled
-          if (qualitySettings.enableTrails && p.trail.length > 1) {
-            loaderCtx.beginPath();
-            loaderCtx.moveTo(p.trail[0].x, p.trail[0].y);
-            for (let t = 1; t < p.trail.length; t++) {
-              loaderCtx.lineTo(p.trail[t].x, p.trail[t].y);
-            }
-            loaderCtx.strokeStyle = p.color;
-            loaderCtx.globalAlpha = p.life * 0.3;
-            loaderCtx.lineWidth = p.size * 0.5;
-            loaderCtx.stroke();
-            loaderCtx.globalAlpha = 1;
+          // Skip drawing every other particle on low quality
+          if (
+            qualitySettings === QUALITY_PRESETS.low &&
+            particleIndex % 2 === 0
+          ) {
+            continue;
           }
 
-          // Draw particle - simplified (no shadow blur for performance)
+          // Trail - only if enabled and limited length
+          if (qualitySettings.enableTrails && p.life > 0.3) {
+            p.trail.push({ x: p.x, y: p.y });
+            if (p.trail.length > qualitySettings.trailLength) p.trail.shift();
+
+            if (p.trail.length > 1) {
+              loaderCtx.beginPath();
+              loaderCtx.moveTo(p.trail[0].x, p.trail[0].y);
+              for (let t = 1; t < p.trail.length; t++) {
+                loaderCtx.lineTo(p.trail[t].x, p.trail[t].y);
+              }
+              loaderCtx.strokeStyle = p.color;
+              loaderCtx.globalAlpha = p.life * 0.3;
+              loaderCtx.lineWidth = p.size * 0.5;
+              loaderCtx.stroke();
+            }
+          }
+
+          // Draw particle - simplified
           loaderCtx.beginPath();
-          loaderCtx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+          loaderCtx.arc(
+            p.x,
+            p.y,
+            Math.max(0.5, p.size * p.life),
+            0,
+            Math.PI * 2
+          );
           loaderCtx.fillStyle = p.color;
-          loaderCtx.globalAlpha = p.life;
+          loaderCtx.globalAlpha = Math.min(1, p.life * 1.2);
           loaderCtx.fill();
-          loaderCtx.globalAlpha = 1;
+        } else if (p.life > 0) {
+          p.life = 0; // Mark as dead
         }
       }
+
+      loaderCtx.globalAlpha = 1;
 
       if (allDead) {
         loaderFireworks.splice(i, 1);
@@ -629,65 +669,56 @@ function startFireworkShow() {
   // Hide tap text
   if (tapText) tapText.classList.add("hidden");
 
-  const scale = getMobileScale();
+  const isLowQuality = qualitySettings === QUALITY_PRESETS.low;
 
-  // Phase 1: Initial burst (0-1s) - reduced count
-  const phase1Count = Math.max(
-    2,
-    Math.floor(5 * qualitySettings.particleMultiplier)
-  );
+  // Phase 1: Initial burst (0-1.2s) - very few fireworks, well spaced
+  const phase1Count = isLowQuality
+    ? 2
+    : Math.min(3, Math.floor(4 * qualitySettings.particleMultiplier));
   for (let i = 0; i < phase1Count; i++) {
     setTimeout(() => {
-      loaderFireworks.push(createFirework());
-    }, i * 200);
+      if (loaderFireworks.length < 3) {
+        // Limit concurrent fireworks
+        loaderFireworks.push(createFirework());
+      }
+    }, i * 400); // More spacing between fireworks
   }
 
-  // Phase 2: Building up (1-2.5s) - reduced count
-  const phase2Count = Math.max(
-    3,
-    Math.floor(8 * qualitySettings.particleMultiplier)
-  );
+  // Phase 2: Building up (1.5-3s) - staggered launches
+  const phase2Count = isLowQuality
+    ? 3
+    : Math.min(5, Math.floor(6 * qualitySettings.particleMultiplier));
   for (let i = 0; i < phase2Count; i++) {
     setTimeout(() => {
-      loaderFireworks.push(createFirework());
-    }, 1000 + i * 200);
+      if (loaderFireworks.length < 4) {
+        // Limit concurrent fireworks
+        loaderFireworks.push(createFirework());
+      }
+    }, 1500 + i * 350);
   }
 
-  // Phase 3: Grand Finale (2.5-4s) - reduced for mobile
+  // Phase 3: Finale (3.5-4.5s) - fewer fireworks, more spread out
   setTimeout(() => {
-    // Center burst
     const centerX = window.innerWidth / 2;
-    const centerCount = Math.max(
-      3,
-      Math.floor(6 * qualitySettings.particleMultiplier)
-    );
-    const spreadWidth = Math.min(300, window.innerWidth * 0.4);
+    const centerCount = isLowQuality
+      ? 2
+      : Math.min(3, Math.floor(4 * qualitySettings.particleMultiplier));
+    const spreadWidth = Math.min(200, window.innerWidth * 0.3);
 
     for (let i = 0; i < centerCount; i++) {
       setTimeout(() => {
-        const x = centerX + (Math.random() - 0.5) * spreadWidth;
-        loaderFireworks.push(createFirework(x, undefined, true));
-      }, i * 150);
-    }
-
-    // Side bursts - only on medium/high quality
-    if (qualitySettings.particleMultiplier >= 0.5) {
-      const sideCount = Math.floor(4 * qualitySettings.particleMultiplier);
-      for (let i = 0; i < sideCount; i++) {
-        setTimeout(() => {
-          const side = i % 2 === 0 ? 0.2 : 0.8;
-          const x =
-            window.innerWidth * side + (Math.random() - 0.5) * 100 * scale;
+        if (loaderFireworks.length < 5) {
+          const x = centerX + (Math.random() - 0.5) * spreadWidth;
           loaderFireworks.push(createFirework(x, undefined, true));
-        }, i * 180);
-      }
+        }
+      }, i * 300);
     }
-  }, 2500);
+  }, 3500);
 
-  // Transition to main scene
+  // Transition to main scene - give more time for particles to clear
   setTimeout(() => {
     finishLoader();
-  }, 4500);
+  }, 5000);
 }
 
 function finishLoader() {
