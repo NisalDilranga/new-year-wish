@@ -61,15 +61,20 @@ const QUALITY_PRESETS: Record<string, QualitySettings> = {
 
 function detectQuality(): QualitySettings {
   const canvas = document.createElement("canvas");
-  const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
-  
+  const gl =
+    canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+
   // Check for low-end device indicators
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  const isLowMemory = (navigator as any).deviceMemory && (navigator as any).deviceMemory < 4;
+  const isMobile =
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+      navigator.userAgent
+    );
+  const isLowMemory =
+    (navigator as any).deviceMemory && (navigator as any).deviceMemory < 4;
   const hardwareConcurrency = navigator.hardwareConcurrency || 2;
   const isSmallScreen = window.innerWidth < 480 || window.innerHeight < 480;
   const isLowEndGPU = gl ? false : true; // No WebGL = definitely low end
-  
+
   // Score system: lower = worse device
   let score = 0;
   if (!isMobile) score += 3;
@@ -78,9 +83,11 @@ function detectQuality(): QualitySettings {
   if (hardwareConcurrency >= 8) score += 1;
   if (!isSmallScreen) score += 1;
   if (!isLowEndGPU) score += 1;
-  
-  console.log(`Device score: ${score}, Mobile: ${isMobile}, Cores: ${hardwareConcurrency}`);
-  
+
+  console.log(
+    `Device score: ${score}, Mobile: ${isMobile}, Cores: ${hardwareConcurrency}`
+  );
+
   if (score <= 3 || (isMobile && isSmallScreen)) {
     console.log("Using LOW quality preset");
     return QUALITY_PRESETS.low;
@@ -354,7 +361,10 @@ function resizeLoaderCanvas() {
     document.documentElement.clientHeight
   );
   // Limit pixel ratio more aggressively on mobile for performance
-  const dpr = qualitySettings === QUALITY_PRESETS.low ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
+  const dpr =
+    qualitySettings === QUALITY_PRESETS.low
+      ? 1
+      : Math.min(window.devicePixelRatio || 1, 1.5);
 
   // Set display size
   loaderCanvas.style.width = width + "px";
@@ -622,7 +632,10 @@ function startFireworkShow() {
   const scale = getMobileScale();
 
   // Phase 1: Initial burst (0-1s) - reduced count
-  const phase1Count = Math.max(2, Math.floor(5 * qualitySettings.particleMultiplier));
+  const phase1Count = Math.max(
+    2,
+    Math.floor(5 * qualitySettings.particleMultiplier)
+  );
   for (let i = 0; i < phase1Count; i++) {
     setTimeout(() => {
       loaderFireworks.push(createFirework());
@@ -630,7 +643,10 @@ function startFireworkShow() {
   }
 
   // Phase 2: Building up (1-2.5s) - reduced count
-  const phase2Count = Math.max(3, Math.floor(8 * qualitySettings.particleMultiplier));
+  const phase2Count = Math.max(
+    3,
+    Math.floor(8 * qualitySettings.particleMultiplier)
+  );
   for (let i = 0; i < phase2Count; i++) {
     setTimeout(() => {
       loaderFireworks.push(createFirework());
@@ -641,7 +657,10 @@ function startFireworkShow() {
   setTimeout(() => {
     // Center burst
     const centerX = window.innerWidth / 2;
-    const centerCount = Math.max(3, Math.floor(6 * qualitySettings.particleMultiplier));
+    const centerCount = Math.max(
+      3,
+      Math.floor(6 * qualitySettings.particleMultiplier)
+    );
     const spreadWidth = Math.min(300, window.innerWidth * 0.4);
 
     for (let i = 0; i < centerCount; i++) {
@@ -690,13 +709,16 @@ function finishLoader() {
   setTimeout(() => {
     cancelAnimationFrame(loaderAnimationId);
     loaderScreen.classList.add("hidden");
-    
+
     // Clean up loader resources
     loaderFireworks = [];
     starParticles = [];
 
     // Launch fireworks in main scene!
-    const fireworkCount = Math.max(3, Math.floor(qualitySettings.maxFireworks * 0.5));
+    const fireworkCount = Math.max(
+      3,
+      Math.floor(qualitySettings.maxFireworks * 0.5)
+    );
     if (mainSceneReady) {
       for (let i = 0; i < fireworkCount; i++) {
         setTimeout(() => {
@@ -741,12 +763,17 @@ function getResponsiveCameraZ(): number {
 }
 camera.position.set(0, 0, getResponsiveCameraZ());
 
-const renderer = new THREE.WebGLRenderer({ 
+const renderer = new THREE.WebGLRenderer({
   antialias: qualitySettings === QUALITY_PRESETS.high,
   powerPreference: "high-performance",
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, qualitySettings === QUALITY_PRESETS.low ? 1 : 1.5));
+renderer.setPixelRatio(
+  Math.min(
+    window.devicePixelRatio,
+    qualitySettings === QUALITY_PRESETS.low ? 1 : 1.5
+  )
+);
 document.body.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -793,7 +820,7 @@ fontLoader.load("/fonts/helvetiker_bold.typeface.json", (font) => {
   const isSmallMobile = window.innerWidth < 480;
   const textSize = isSmallMobile ? 4 : isMobile ? 5.5 : 8;
   const textDepth = isSmallMobile ? 0.6 : isMobile ? 0.8 : 1.5;
-  
+
   // Use quality settings for geometry complexity
   const curveSegs = qualitySettings.textCurveSegments;
   const bevelSegs = qualitySettings.textBevelSegments;
@@ -815,7 +842,7 @@ fontLoader.load("/fonts/helvetiker_bold.typeface.json", (font) => {
   // Simplified materials for low quality
   let frontMaterial: THREE.Material;
   let sideMaterial: THREE.Material;
-  
+
   if (qualitySettings === QUALITY_PRESETS.low) {
     frontMaterial = new THREE.MeshStandardMaterial({
       color: 0xffffff,
@@ -969,18 +996,18 @@ let avgFrameTime = 16.67; // Start assuming 60fps
 // Animation Loop
 function animate() {
   requestAnimationFrame(animate);
-  
+
   // Track frame time for adaptive performance
   const now = performance.now();
   const delta = now - lastFrameTime;
   lastFrameTime = now;
-  
+
   frameCount++;
   if (frameCount > 10) {
     avgFrameTime = avgFrameTime * 0.9 + delta * 0.1;
     frameCount = 0;
   }
-  
+
   // If running slow, skip some work
   const isLagging = avgFrameTime > 33; // Below 30fps
 
@@ -997,8 +1024,12 @@ function animate() {
   }
 
   // Manage fireworks - use quality settings and adaptive spawn rate
-  const spawnRate = isLagging ? qualitySettings.spawnRate * 0.5 : qualitySettings.spawnRate;
-  const maxFw = isLagging ? Math.floor(qualitySettings.maxFireworks * 0.5) : qualitySettings.maxFireworks;
+  const spawnRate = isLagging
+    ? qualitySettings.spawnRate * 0.5
+    : qualitySettings.spawnRate;
+  const maxFw = isLagging
+    ? Math.floor(qualitySettings.maxFireworks * 0.5)
+    : qualitySettings.maxFireworks;
 
   if (Math.random() < spawnRate && fireworks.length < maxFw) {
     fireworks.push(new Firework());
@@ -1020,10 +1051,10 @@ animate();
 let resizeTimeout: number | null = null;
 function handleResize() {
   if (resizeTimeout) return;
-  
+
   resizeTimeout = window.setTimeout(() => {
     resizeTimeout = null;
-    
+
     const width = Math.max(
       window.innerWidth,
       document.documentElement.clientWidth
@@ -1036,7 +1067,12 @@ function handleResize() {
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, qualitySettings === QUALITY_PRESETS.low ? 1 : 1.5));
+    renderer.setPixelRatio(
+      Math.min(
+        window.devicePixelRatio,
+        qualitySettings === QUALITY_PRESETS.low ? 1 : 1.5
+      )
+    );
     camera.position.z = getResponsiveCameraZ();
   }, 100);
 }
