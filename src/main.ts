@@ -5,6 +5,97 @@ import { FontLoader } from "three/examples/jsm/loaders/FontLoader.js";
 import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
 
 // ===========================================
+// PERFORMANCE DETECTION & QUALITY SETTINGS
+// ===========================================
+interface QualitySettings {
+  particleMultiplier: number;
+  trailLength: number;
+  maxFireworks: number;
+  starCount: number;
+  enableGlow: boolean;
+  enableTrails: boolean;
+  fireworkParticles: number;
+  spawnRate: number;
+  textCurveSegments: number;
+  textBevelSegments: number;
+}
+
+const QUALITY_PRESETS: Record<string, QualitySettings> = {
+  low: {
+    particleMultiplier: 0.25,
+    trailLength: 3,
+    maxFireworks: 4,
+    starCount: 30,
+    enableGlow: false,
+    enableTrails: false,
+    fireworkParticles: 80,
+    spawnRate: 0.015,
+    textCurveSegments: 6,
+    textBevelSegments: 2,
+  },
+  medium: {
+    particleMultiplier: 0.5,
+    trailLength: 5,
+    maxFireworks: 6,
+    starCount: 50,
+    enableGlow: false,
+    enableTrails: true,
+    fireworkParticles: 150,
+    spawnRate: 0.025,
+    textCurveSegments: 10,
+    textBevelSegments: 4,
+  },
+  high: {
+    particleMultiplier: 1,
+    trailLength: 8,
+    maxFireworks: 15,
+    starCount: 100,
+    enableGlow: true,
+    enableTrails: true,
+    fireworkParticles: 400,
+    spawnRate: 0.05,
+    textCurveSegments: 20,
+    textBevelSegments: 8,
+  },
+};
+
+function detectQuality(): QualitySettings {
+  const canvas = document.createElement("canvas");
+  const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+  
+  // Check for low-end device indicators
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  const isLowMemory = (navigator as any).deviceMemory && (navigator as any).deviceMemory < 4;
+  const hardwareConcurrency = navigator.hardwareConcurrency || 2;
+  const isSmallScreen = window.innerWidth < 480 || window.innerHeight < 480;
+  const isLowEndGPU = gl ? false : true; // No WebGL = definitely low end
+  
+  // Score system: lower = worse device
+  let score = 0;
+  if (!isMobile) score += 3;
+  if (!isLowMemory) score += 2;
+  if (hardwareConcurrency >= 4) score += 2;
+  if (hardwareConcurrency >= 8) score += 1;
+  if (!isSmallScreen) score += 1;
+  if (!isLowEndGPU) score += 1;
+  
+  console.log(`Device score: ${score}, Mobile: ${isMobile}, Cores: ${hardwareConcurrency}`);
+  
+  if (score <= 3 || (isMobile && isSmallScreen)) {
+    console.log("Using LOW quality preset");
+    return QUALITY_PRESETS.low;
+  } else if (score <= 6 || isMobile) {
+    console.log("Using MEDIUM quality preset");
+    return QUALITY_PRESETS.medium;
+  } else {
+    console.log("Using HIGH quality preset");
+    return QUALITY_PRESETS.high;
+  }
+}
+
+const qualitySettings = detectQuality();
+
+// ===========================================
 // SOUND EFFECTS SYSTEM
 // ===========================================
 class SoundManager {
@@ -216,14 +307,14 @@ const fireworkColors = [
 function initLoader() {
   if (!loaderCanvas) return;
 
-  loaderCtx = loaderCanvas.getContext("2d");
+  loaderCtx = loaderCanvas.getContext("2d", { alpha: false });
   if (!loaderCtx) return;
 
   // Set initial canvas size
   resizeLoaderCanvas();
 
-  // Create twinkling stars background - adjust count for mobile
-  const starCount = window.innerWidth < 768 ? 60 : 100;
+  // Create twinkling stars background - use quality settings
+  const starCount = qualitySettings.starCount;
   for (let i = 0; i < starCount; i++) {
     starParticles.push({
       x: Math.random() * window.innerWidth,
@@ -262,7 +353,8 @@ function resizeLoaderCanvas() {
     window.innerHeight,
     document.documentElement.clientHeight
   );
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  // Limit pixel ratio more aggressively on mobile for performance
+  const dpr = qualitySettings === QUALITY_PRESETS.low ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
 
   // Set display size
   loaderCanvas.style.width = width + "px";
@@ -314,9 +406,8 @@ function createFirework(
 
 function explodeFirework(fw: LoaderFirework) {
   const scale = getMobileScale();
-  const isMobile = window.innerWidth < 768;
   const particleCount = Math.floor(
-    (fw.isGrand ? 250 : 180) * (isMobile ? 0.5 : 1)
+    (fw.isGrand ? 150 : 100) * qualitySettings.particleMultiplier
   );
   const colorSet =
     fireworkColors[Math.floor(Math.random() * fireworkColors.length)];
@@ -342,8 +433,8 @@ function explodeFirework(fw: LoaderFirework) {
     });
   }
 
-  // Inner sparkle burst
-  const sparkleCount = Math.floor(80 * (isMobile ? 0.5 : 1));
+  // Inner sparkle burst - reduced for performance
+  const sparkleCount = Math.floor(40 * qualitySettings.particleMultiplier);
   for (let i = 0; i < sparkleCount; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = (Math.random() * 10 + 8) * scale;
@@ -360,9 +451,9 @@ function explodeFirework(fw: LoaderFirework) {
     });
   }
 
-  // Crackle effect - small delayed particles
-  if (fw.isGrand) {
-    const crackleCount = Math.floor(50 * (isMobile ? 0.4 : 1));
+  // Crackle effect - only on high quality and grand fireworks
+  if (fw.isGrand && qualitySettings.enableGlow) {
+    const crackleCount = Math.floor(30 * qualitySettings.particleMultiplier);
     for (let i = 0; i < crackleCount; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = (Math.random() * 3 + 1) * scale;
@@ -387,20 +478,18 @@ function animateLoader() {
   if (!loaderCtx || !loaderCanvas) return;
 
   // Clear with trail effect
-  loaderCtx.fillStyle = "rgba(10, 10, 32, 0.2)";
+  loaderCtx.fillStyle = "rgba(10, 10, 32, 0.25)";
   loaderCtx.fillRect(0, 0, loaderCanvas.width, loaderCanvas.height);
 
-  // Draw twinkling stars
+  // Draw twinkling stars - simplified
   for (const star of starParticles) {
     star.life += (Math.random() - 0.5) * 0.1;
     star.life = Math.max(0.2, Math.min(1, star.life));
 
     loaderCtx.beginPath();
     loaderCtx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
-    loaderCtx.fillStyle = star.color;
-    loaderCtx.globalAlpha = star.life * 0.8;
+    loaderCtx.fillStyle = `rgba(255, 255, 255, ${star.life * 0.8})`;
     loaderCtx.fill();
-    loaderCtx.globalAlpha = 1;
   }
 
   // Update and draw fireworks
@@ -412,44 +501,45 @@ function animateLoader() {
       fw.y += fw.vy;
       fw.vy += 0.4;
 
-      // Glowing rocket head
-      const gradient = loaderCtx.createRadialGradient(
-        fw.x,
-        fw.y,
-        0,
-        fw.x,
-        fw.y,
-        15
-      );
-      gradient.addColorStop(0, fw.color);
-      gradient.addColorStop(0.5, fw.color + "88");
-      gradient.addColorStop(1, "transparent");
+      // Simplified rocket glow - no gradient on low quality
+      if (qualitySettings.enableGlow) {
+        const gradient = loaderCtx.createRadialGradient(
+          fw.x,
+          fw.y,
+          0,
+          fw.x,
+          fw.y,
+          15
+        );
+        gradient.addColorStop(0, fw.color);
+        gradient.addColorStop(0.5, fw.color + "88");
+        gradient.addColorStop(1, "transparent");
 
-      loaderCtx.beginPath();
-      loaderCtx.arc(fw.x, fw.y, 15, 0, Math.PI * 2);
-      loaderCtx.fillStyle = gradient;
-      loaderCtx.fill();
+        loaderCtx.beginPath();
+        loaderCtx.arc(fw.x, fw.y, 15, 0, Math.PI * 2);
+        loaderCtx.fillStyle = gradient;
+        loaderCtx.fill();
+      }
 
       // Rocket core
       loaderCtx.beginPath();
-      loaderCtx.arc(fw.x, fw.y, 3, 0, Math.PI * 2);
-      loaderCtx.fillStyle = "#ffffff";
+      loaderCtx.arc(fw.x, fw.y, 4, 0, Math.PI * 2);
+      loaderCtx.fillStyle = fw.color;
       loaderCtx.fill();
 
-      // Rocket trail sparks
-      for (let j = 0; j < 5; j++) {
+      // Rocket trail sparks - reduced count
+      const sparkCount = qualitySettings.enableGlow ? 4 : 2;
+      for (let j = 0; j < sparkCount; j++) {
         const sparkX = fw.x + (Math.random() - 0.5) * 8;
-        const sparkY = fw.y + Math.random() * 30 + 5;
-        const sparkSize = Math.random() * 3 + 1;
+        const sparkY = fw.y + Math.random() * 25 + 5;
+        const sparkSize = Math.random() * 2 + 1;
 
         loaderCtx.beginPath();
         loaderCtx.arc(sparkX, sparkY, sparkSize, 0, Math.PI * 2);
         loaderCtx.fillStyle = `hsl(${40 + Math.random() * 20}, 100%, ${
           60 + Math.random() * 30
         }%)`;
-        loaderCtx.globalAlpha = Math.random() * 0.8 + 0.2;
         loaderCtx.fill();
-        loaderCtx.globalAlpha = 1;
       }
 
       // Check explosion
@@ -464,9 +554,11 @@ function animateLoader() {
         if (p.life > 0) {
           allDead = false;
 
-          // Trail
-          p.trail.push({ x: p.x, y: p.y });
-          if (p.trail.length > 8) p.trail.shift();
+          // Trail - only if enabled and limited length
+          if (qualitySettings.enableTrails) {
+            p.trail.push({ x: p.x, y: p.y });
+            if (p.trail.length > qualitySettings.trailLength) p.trail.shift();
+          }
 
           // Physics
           p.x += p.vx;
@@ -474,31 +566,28 @@ function animateLoader() {
           p.vy += 0.12;
           p.vx *= 0.98;
           p.vy *= 0.98;
-          p.life -= 0.015;
+          p.life -= 0.018; // Slightly faster decay
 
-          // Draw trail
-          if (p.trail.length > 1) {
+          // Draw trail - only if enabled
+          if (qualitySettings.enableTrails && p.trail.length > 1) {
             loaderCtx.beginPath();
             loaderCtx.moveTo(p.trail[0].x, p.trail[0].y);
             for (let t = 1; t < p.trail.length; t++) {
               loaderCtx.lineTo(p.trail[t].x, p.trail[t].y);
             }
             loaderCtx.strokeStyle = p.color;
-            loaderCtx.globalAlpha = p.life * 0.4;
-            loaderCtx.lineWidth = p.size * 0.6;
+            loaderCtx.globalAlpha = p.life * 0.3;
+            loaderCtx.lineWidth = p.size * 0.5;
             loaderCtx.stroke();
             loaderCtx.globalAlpha = 1;
           }
 
-          // Draw particle with glow
+          // Draw particle - simplified (no shadow blur for performance)
           loaderCtx.beginPath();
           loaderCtx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
           loaderCtx.fillStyle = p.color;
           loaderCtx.globalAlpha = p.life;
-          loaderCtx.shadowBlur = 15;
-          loaderCtx.shadowColor = p.color;
           loaderCtx.fill();
-          loaderCtx.shadowBlur = 0;
           loaderCtx.globalAlpha = 1;
         }
       }
@@ -530,48 +619,49 @@ function startFireworkShow() {
   // Hide tap text
   if (tapText) tapText.classList.add("hidden");
 
-  const isMobile = window.innerWidth < 768;
   const scale = getMobileScale();
 
-  // Phase 1: Initial burst (0-1s)
-  const phase1Count = isMobile ? 3 : 5;
+  // Phase 1: Initial burst (0-1s) - reduced count
+  const phase1Count = Math.max(2, Math.floor(5 * qualitySettings.particleMultiplier));
   for (let i = 0; i < phase1Count; i++) {
     setTimeout(() => {
       loaderFireworks.push(createFirework());
-    }, i * 150);
+    }, i * 200);
   }
 
-  // Phase 2: Building up (1-2.5s)
-  const phase2Count = isMobile ? 6 : 10;
+  // Phase 2: Building up (1-2.5s) - reduced count
+  const phase2Count = Math.max(3, Math.floor(8 * qualitySettings.particleMultiplier));
   for (let i = 0; i < phase2Count; i++) {
     setTimeout(() => {
       loaderFireworks.push(createFirework());
-    }, 1000 + i * 150);
+    }, 1000 + i * 200);
   }
 
-  // Phase 3: Grand Finale (2.5-4s) - Many fireworks at once!
+  // Phase 3: Grand Finale (2.5-4s) - reduced for mobile
   setTimeout(() => {
     // Center burst
     const centerX = window.innerWidth / 2;
-    const centerCount = isMobile ? 5 : 8;
+    const centerCount = Math.max(3, Math.floor(6 * qualitySettings.particleMultiplier));
     const spreadWidth = Math.min(300, window.innerWidth * 0.4);
 
     for (let i = 0; i < centerCount; i++) {
       setTimeout(() => {
         const x = centerX + (Math.random() - 0.5) * spreadWidth;
         loaderFireworks.push(createFirework(x, undefined, true));
-      }, i * 100);
+      }, i * 150);
     }
 
-    // Side bursts
-    const sideCount = isMobile ? 4 : 6;
-    for (let i = 0; i < sideCount; i++) {
-      setTimeout(() => {
-        const side = i % 2 === 0 ? 0.2 : 0.8;
-        const x =
-          window.innerWidth * side + (Math.random() - 0.5) * 100 * scale;
-        loaderFireworks.push(createFirework(x, undefined, true));
-      }, i * 120);
+    // Side bursts - only on medium/high quality
+    if (qualitySettings.particleMultiplier >= 0.5) {
+      const sideCount = Math.floor(4 * qualitySettings.particleMultiplier);
+      for (let i = 0; i < sideCount; i++) {
+        setTimeout(() => {
+          const side = i % 2 === 0 ? 0.2 : 0.8;
+          const x =
+            window.innerWidth * side + (Math.random() - 0.5) * 100 * scale;
+          loaderFireworks.push(createFirework(x, undefined, true));
+        }, i * 180);
+      }
     }
   }, 2500);
 
@@ -600,15 +690,18 @@ function finishLoader() {
   setTimeout(() => {
     cancelAnimationFrame(loaderAnimationId);
     loaderScreen.classList.add("hidden");
+    
+    // Clean up loader resources
+    loaderFireworks = [];
+    starParticles = [];
 
     // Launch fireworks in main scene!
-    const isMobile = window.innerWidth < 768;
-    const fireworkCount = isMobile ? 8 : 15;
+    const fireworkCount = Math.max(3, Math.floor(qualitySettings.maxFireworks * 0.5));
     if (mainSceneReady) {
       for (let i = 0; i < fireworkCount; i++) {
         setTimeout(() => {
           fireworks.push(new Firework());
-        }, i * 80);
+        }, i * 120);
       }
     }
   }, 1200);
@@ -648,9 +741,12 @@ function getResponsiveCameraZ(): number {
 }
 camera.position.set(0, 0, getResponsiveCameraZ());
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ 
+  antialias: qualitySettings === QUALITY_PRESETS.high,
+  powerPreference: "high-performance",
+});
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio for performance
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, qualitySettings === QUALITY_PRESETS.low ? 1 : 1.5));
 document.body.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -671,9 +767,9 @@ const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
 directionalLight.position.set(0, 0, 10);
 scene.add(directionalLight);
 
-// Stars - responsive count
+// Stars - use quality settings for count
 const starsGeometry = new THREE.BufferGeometry();
-const starsCount = window.innerWidth < 768 ? 1000 : 2000;
+const starsCount = Math.floor(qualitySettings.starCount * 15); // Scale up from loader star count
 const posArray = new Float32Array(starsCount * 3);
 
 for (let i = 0; i < starsCount * 3; i++) {
@@ -682,13 +778,13 @@ for (let i = 0; i < starsCount * 3; i++) {
 
 starsGeometry.setAttribute("position", new THREE.BufferAttribute(posArray, 3));
 const starsMaterial = new THREE.PointsMaterial({
-  size: window.innerWidth < 768 ? 0.3 : 0.2,
+  size: 0.25,
   color: 0xffffff,
 });
 const starsMesh = new THREE.Points(starsGeometry, starsMaterial);
 scene.add(starsMesh);
 
-// Text - responsive sizing
+// Text - responsive sizing with quality settings
 let textMesh: THREE.Mesh | null = null;
 const fontLoader = new FontLoader();
 fontLoader.load("/fonts/helvetiker_bold.typeface.json", (font) => {
@@ -696,39 +792,57 @@ fontLoader.load("/fonts/helvetiker_bold.typeface.json", (font) => {
   const isMobile = window.innerWidth < 768;
   const isSmallMobile = window.innerWidth < 480;
   const textSize = isSmallMobile ? 4 : isMobile ? 5.5 : 8;
-  const textDepth = isSmallMobile ? 0.8 : isMobile ? 1 : 1.5;
-  const curveSegs = isMobile ? 12 : 20;
-  const bevelSegs = isMobile ? 4 : 8;
+  const textDepth = isSmallMobile ? 0.6 : isMobile ? 0.8 : 1.5;
+  
+  // Use quality settings for geometry complexity
+  const curveSegs = qualitySettings.textCurveSegments;
+  const bevelSegs = qualitySettings.textBevelSegments;
 
   const textGeometry = new TextGeometry("Happy New Year\n       2026", {
     font: font,
     size: textSize,
     depth: textDepth,
     curveSegments: curveSegs,
-    bevelEnabled: true,
-    bevelThickness: textSize * 0.025,
-    bevelSize: textSize * 0.005,
+    bevelEnabled: qualitySettings !== QUALITY_PRESETS.low,
+    bevelThickness: textSize * 0.02,
+    bevelSize: textSize * 0.004,
     bevelOffset: 0,
     bevelSegments: bevelSegs,
   });
 
   textGeometry.center();
 
-  // Dual-tone style: Platinum face, Gold sides
-  const frontMaterial = new THREE.MeshPhysicalMaterial({
-    color: 0xffffff,
-    metalness: 0.9,
-    roughness: 0.1,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.1,
-    reflectivity: 1.0,
-  });
-
-  const sideMaterial = new THREE.MeshStandardMaterial({
-    color: 0xffd700,
-    metalness: 1.0,
-    roughness: 0.3,
-  });
+  // Simplified materials for low quality
+  let frontMaterial: THREE.Material;
+  let sideMaterial: THREE.Material;
+  
+  if (qualitySettings === QUALITY_PRESETS.low) {
+    frontMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      metalness: 0.8,
+      roughness: 0.2,
+    });
+    sideMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffd700,
+      metalness: 0.8,
+      roughness: 0.3,
+    });
+  } else {
+    // Dual-tone style: Platinum face, Gold sides
+    frontMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      metalness: 0.9,
+      roughness: 0.1,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.1,
+      reflectivity: 1.0,
+    });
+    sideMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffd700,
+      metalness: 1.0,
+      roughness: 0.3,
+    });
+  }
 
   textMesh = new THREE.Mesh(textGeometry, [frontMaterial, sideMaterial]);
   scene.add(textMesh);
@@ -737,7 +851,7 @@ fontLoader.load("/fonts/helvetiker_bold.typeface.json", (font) => {
   mainSceneReady = true;
 });
 
-// Fireworks
+// Fireworks - Optimized with object pooling
 class Firework {
   mesh: THREE.Points;
   geometry: THREE.BufferGeometry;
@@ -749,24 +863,22 @@ class Firework {
 
   constructor() {
     this.geometry = new THREE.BufferGeometry();
-    // Responsive particle count
-    const isMobile = window.innerWidth < 768;
-    const count = isMobile ? 200 : 400;
+    // Use quality settings for particle count
+    const count = qualitySettings.fireworkParticles;
     const positions = new Float32Array(count * 3);
     this.velocities = new Float32Array(count * 3);
     this.soundPlayed = false;
 
-    // Play launch sound
-    if (Math.random() < 0.5) {
-      // Only some fireworks make launch sound to avoid noise
+    // Play launch sound - less frequently to reduce audio overhead
+    if (Math.random() < 0.3) {
       soundManager.playLaunch();
     }
 
     const color = new THREE.Color();
-    color.setHSL(Math.random(), 1, 0.6); // Brighter colors
+    color.setHSL(Math.random(), 1, 0.6);
 
     this.material = new THREE.PointsMaterial({
-      size: isMobile ? 0.4 : 0.3,
+      size: 0.35,
       color: color,
       transparent: true,
       opacity: 1,
@@ -781,7 +893,7 @@ class Firework {
 
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.random() * Math.PI;
-      const speed = Math.random() * 0.8 + 0.5; // Varied speed
+      const speed = Math.random() * 0.8 + 0.5;
 
       this.velocities[i * 3] = speed * Math.sin(phi) * Math.cos(theta);
       this.velocities[i * 3 + 1] = speed * Math.sin(phi) * Math.sin(theta);
@@ -795,20 +907,18 @@ class Firework {
     this.mesh = new THREE.Points(this.geometry, this.material);
 
     // Random start position - responsive
-    const spreadX = isMobile ? 50 : 80;
-    const spreadY = isMobile ? 30 : 50;
-    const spreadZ = isMobile ? 25 : 40;
-    this.mesh.position.x = (Math.random() - 0.5) * spreadX;
-    this.mesh.position.y = (Math.random() - 0.5) * spreadY + 10;
-    this.mesh.position.z = (Math.random() - 0.5) * spreadZ - 20;
+    const spread = qualitySettings === QUALITY_PRESETS.low ? 40 : 60;
+    this.mesh.position.x = (Math.random() - 0.5) * spread;
+    this.mesh.position.y = (Math.random() - 0.5) * spread * 0.6 + 10;
+    this.mesh.position.z = (Math.random() - 0.5) * spread * 0.5 - 20;
 
     this.life = 1.0;
     this.active = true;
     scene.add(this.mesh);
 
-    // Play explosion sound shortly after creation (simulates reaching peak)
+    // Play explosion sound shortly after creation
     setTimeout(() => {
-      if (this.active) {
+      if (this.active && Math.random() < 0.5) {
         soundManager.playExplosion(false);
       }
     }, 100);
@@ -818,24 +928,26 @@ class Firework {
     if (!this.active) return;
 
     const positions = this.geometry.attributes.position.array as Float32Array;
+    const len = positions.length / 3;
 
-    for (let i = 0; i < positions.length / 3; i++) {
-      positions[i * 3] += this.velocities[i * 3];
-      positions[i * 3 + 1] += this.velocities[i * 3 + 1];
-      positions[i * 3 + 2] += this.velocities[i * 3 + 2];
+    for (let i = 0; i < len; i++) {
+      const i3 = i * 3;
+      positions[i3] += this.velocities[i3];
+      positions[i3 + 1] += this.velocities[i3 + 1];
+      positions[i3 + 2] += this.velocities[i3 + 2];
 
       // Gravity
-      this.velocities[i * 3 + 1] -= 0.015;
+      this.velocities[i3 + 1] -= 0.015;
 
       // Drag
-      this.velocities[i * 3] *= 0.98;
-      this.velocities[i * 3 + 1] *= 0.98;
-      this.velocities[i * 3 + 2] *= 0.98;
+      this.velocities[i3] *= 0.98;
+      this.velocities[i3 + 1] *= 0.98;
+      this.velocities[i3 + 2] *= 0.98;
     }
 
     this.geometry.attributes.position.needsUpdate = true;
 
-    this.life -= 0.015;
+    this.life -= 0.018; // Slightly faster decay
     this.material.opacity = this.life;
 
     if (this.life <= 0) {
@@ -849,27 +961,46 @@ class Firework {
 
 const fireworks: Firework[] = [];
 
+// Frame time tracking for adaptive quality
+let lastFrameTime = performance.now();
+let frameCount = 0;
+let avgFrameTime = 16.67; // Start assuming 60fps
+
 // Animation Loop
 function animate() {
   requestAnimationFrame(animate);
+  
+  // Track frame time for adaptive performance
+  const now = performance.now();
+  const delta = now - lastFrameTime;
+  lastFrameTime = now;
+  
+  frameCount++;
+  if (frameCount > 10) {
+    avgFrameTime = avgFrameTime * 0.9 + delta * 0.1;
+    frameCount = 0;
+  }
+  
+  // If running slow, skip some work
+  const isLagging = avgFrameTime > 33; // Below 30fps
 
   controls.update();
 
   // Rotate stars slowly
   starsMesh.rotation.y += 0.0005;
 
-  // Float text
+  // Float text - reduced frequency calculations
   if (textMesh) {
-    textMesh.rotation.y = Math.sin(Date.now() * 0.001) * 0.1;
-    textMesh.rotation.x = Math.sin(Date.now() * 0.002) * 0.05;
+    const t = now * 0.001;
+    textMesh.rotation.y = Math.sin(t) * 0.1;
+    textMesh.rotation.x = Math.sin(t * 2) * 0.05;
   }
 
-  // Manage fireworks - lower spawn rate on mobile for performance
-  const isMobile = window.innerWidth < 768;
-  const spawnChance = isMobile ? 0.03 : 0.05;
-  const maxFireworks = isMobile ? 8 : 15;
+  // Manage fireworks - use quality settings and adaptive spawn rate
+  const spawnRate = isLagging ? qualitySettings.spawnRate * 0.5 : qualitySettings.spawnRate;
+  const maxFw = isLagging ? Math.floor(qualitySettings.maxFireworks * 0.5) : qualitySettings.maxFireworks;
 
-  if (Math.random() < spawnChance && fireworks.length < maxFireworks) {
+  if (Math.random() < spawnRate && fireworks.length < maxFw) {
     fireworks.push(new Firework());
   }
 
@@ -885,22 +1016,29 @@ function animate() {
 
 animate();
 
-// Resize handler function
+// Resize handler function - debounced
+let resizeTimeout: number | null = null;
 function handleResize() {
-  const width = Math.max(
-    window.innerWidth,
-    document.documentElement.clientWidth
-  );
-  const height = Math.max(
-    window.innerHeight,
-    document.documentElement.clientHeight
-  );
+  if (resizeTimeout) return;
+  
+  resizeTimeout = window.setTimeout(() => {
+    resizeTimeout = null;
+    
+    const width = Math.max(
+      window.innerWidth,
+      document.documentElement.clientWidth
+    );
+    const height = Math.max(
+      window.innerHeight,
+      document.documentElement.clientHeight
+    );
 
-  camera.aspect = width / height;
-  camera.updateProjectionMatrix();
-  renderer.setSize(width, height);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  camera.position.z = getResponsiveCameraZ();
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, qualitySettings === QUALITY_PRESETS.low ? 1 : 1.5));
+    camera.position.z = getResponsiveCameraZ();
+  }, 100);
 }
 
 window.addEventListener("resize", handleResize);
